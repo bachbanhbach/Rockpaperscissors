@@ -19,6 +19,12 @@
                 <span class="matchup-vs">VS</span>
                 <span class="player-name-red" id="red-name">Đội Đỏ</span>
             </div>
+            
+            <div class="game-info-pill game-link-pill" id="room-info" onclick="changeRoom()" title="Đổi phòng chơi">
+                <span>🚪 Phòng: </span>
+                <strong id="room-display" style="margin-left: 4px;">...</strong>
+            </div>
+
             <div class="game-info-pill" id="turn-indicator">
                 <span class="turn-dot" id="turn-dot"></span>
                 <span id="turn-text">Lượt: Đội Xanh</span>
@@ -101,7 +107,30 @@
     <!-- PlayHTML for multiplayer sync -->
     <script type="module">
         import { playhtml } from "https://unpkg.com/playhtml";
-        playhtml.init();
+        
+        // Get room from URL or use a default
+        const urlParams = new URLSearchParams(window.location.search);
+        let currentRoom = urlParams.get('room') || 'phong-test-1';
+        
+        // Display room name
+        const roomDisplay = document.getElementById('room-display');
+        if (roomDisplay) roomDisplay.innerText = currentRoom;
+        
+        // Init playhtml with specific room
+        playhtml.init({
+            room: currentRoom
+        });
+        
+        // Global function to change room
+        window.changeRoom = function() {
+            const newRoom = prompt("Nhập tên phòng muốn tham gia (chỉ dùng chữ không dấu và gạch ngang):", currentRoom);
+            if (newRoom && newRoom.trim() !== "" && newRoom !== currentRoom) {
+                // Redirect to the same page but with new room parameter
+                const url = new URL(window.location.href);
+                url.searchParams.set('room', newRoom.trim());
+                window.location.href = url.toString();
+            }
+        };
     </script>
     <script src="logic.js"></script>
 </body>
