@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OTTv2 — Oẳn Tù Tì Cờ Vua</title>
+    <meta name="description" content="Game Oẳn Tù Tì V2 (OTTv2) - Đấm Lá Kéo trên bàn cờ 9x9. Chơi online multiplayer.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Roboto+Slab:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app" id="app">
+        <!-- Top Tray: Game Info -->
+        <div class="game-top-tray" id="game-top-tray">
+            <div class="matchup-pill">
+                <span class="player-name-blue" id="blue-name">Đội Xanh</span>
+                <span class="matchup-vs">VS</span>
+                <span class="player-name-red" id="red-name">Đội Đỏ</span>
+            </div>
+            <div class="game-info-pill" id="turn-indicator">
+                <span class="turn-dot" id="turn-dot"></span>
+                <span id="turn-text">Lượt: Đội Xanh</span>
+            </div>
+            <button class="game-info-pill game-link-pill" id="reset-btn" onclick="resetGame()">⟳ Chơi lại</button>
+        </div>
+
+        <!-- Game Play Area -->
+        <div class="game-play-area" id="game-play-area">
+            <!-- Board Column -->
+            <div class="game-board-column">
+                <!-- Player 2 (Red) Material Panel -->
+                <div class="player-materials-panel" id="panel-red">
+                    <div class="player-material-row">
+                        <span class="player-material-name" style="color: var(--theme-red); font-weight: 900;">Đội Đỏ</span>
+                        <div class="player-material-captures" id="captured-by-red"></div>
+                    </div>
+                </div>
+
+                <!-- Board -->
+                <div class="board-wrap">
+                    <div class="ranks" id="ranks">
+                        <div class="label">9</div>
+                        <div class="label">8</div>
+                        <div class="label">7</div>
+                        <div class="label">6</div>
+                        <div class="label">5</div>
+                        <div class="label">4</div>
+                        <div class="label">3</div>
+                        <div class="label">2</div>
+                        <div class="label">1</div>
+                    </div>
+                    <div class="board" id="board"></div>
+                    <div class="files" id="files">
+                        <div class="label">A</div>
+                        <div class="label">B</div>
+                        <div class="label">C</div>
+                        <div class="label">D</div>
+                        <div class="label">E</div>
+                        <div class="label">F</div>
+                        <div class="label">G</div>
+                        <div class="label">H</div>
+                        <div class="label">I</div>
+                    </div>
+                </div>
+
+                <!-- Player 1 (Blue) Material Panel -->
+                <div class="player-materials-panel" id="panel-blue">
+                    <div class="player-material-row">
+                        <span class="player-material-name" style="color: var(--theme-blue); font-weight: 900;">Đội Xanh</span>
+                        <div class="player-material-captures" id="captured-by-blue"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Sidebar -->
+            <div class="history-ledger" id="history-ledger">
+                <div class="history-ledger-header">
+                    <strong>Lịch sử</strong>
+                    <span id="move-count">0 nước</span>
+                </div>
+                <div class="history-ledger-grid" id="history-grid">
+                    <div class="live-panel-empty">Chưa có nước đi nào</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Win Modal -->
+        <div class="win-overlay" id="win-overlay" style="display:none;">
+            <div class="win-modal">
+                <h2 id="win-title">🏆 Chiến thắng!</h2>
+                <p id="win-reason"></p>
+                <button class="win-dismiss" onclick="resetGame()">Chơi lại</button>
+            </div>
+        </div>
+        <!-- PlayHTML Sync Element (hidden, synced across all clients) -->
+        <pre id="game-sync" can-play></pre>
+    </div>
+
+    <!-- PlayHTML for multiplayer sync -->
+    <script type="module">
+        import { playhtml } from "https://unpkg.com/playhtml";
+        playhtml.init();
+    </script>
+    <script src="logic.js"></script>
+</body>
+</html>

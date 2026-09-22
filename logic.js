@@ -1,0 +1,533 @@
+// ===== OTTv2 - Game Logic + playhtml.fun Multiplayer =====
+
+const ROWS = 9;
+const COLS = 9;
+
+// Piece types
+const ROCK = 'rock';
+const PAPER = 'paper';
+const SCISSORS = 'scissors';
+
+// SVG icons for each piece type
+const PIECE_SVG = {
+    [ROCK]: `<svg viewBox="0 0 24 24"><path d="M17.2 6.8c-1.5-1.5-3.5-2.3-5.7-2.3-2.1 0-4.1.8-5.6 2.3C4.4 8.3 3.5 10.3 3.5 12.5c0 2.1.9 4.1 2.4 5.6 1.5 1.5 3.5 2.4 5.6 2.4s4.2-.9 5.7-2.4c1.5-1.5 2.3-3.5 2.3-5.6 0-2.2-.8-4.2-2.3-5.7z" fill="currentColor" stroke="currentColor" stroke-width="1.5"/></svg>`,
+    [PAPER]: `<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2.2"/><line x1="8.5" y1="8" x2="15.5" y2="8" stroke="currentColor" stroke-width="2"/><line x1="8.5" y1="12" x2="15.5" y2="12" stroke="currentColor" stroke-width="2"/><line x1="8.5" y1="16" x2="13" y2="16" stroke="currentColor" stroke-width="2"/></svg>`,
+    [SCISSORS]: `<svg viewBox="0 0 24 24"><circle cx="7" cy="17" r="2.8" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="17" cy="17" r="2.8" fill="none" stroke="currentColor" stroke-width="2.2"/><line x1="9.2" y1="15" x2="17" y2="5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="14.8" y1="15" x2="7" y2="5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`
+};
+
+const TYPE_NAMES = {
+    [ROCK]: 'Đấm',
+    [PAPER]: 'Lá',
+    [SCISSORS]: 'Kéo'
+};
+
+const TYPE_EMOJI = {
+    [ROCK]: '✊',
+    [PAPER]: '✋',
+    [SCISSORS]: '✌️'
+};
+
+// Game State
+let board = [];
+let currentPlayer = 1; // 1: Blue, 2: Red
+let selectedPiece = null;
+let lastMove = null;
+let moveHistory = [];
+let capturedByBlue = []; // pieces Blue captured from Red
+let capturedByRed = [];  // pieces Red captured from Blue
+let gameOver = false;
+
+// ===== Board Initialization =====
+// Piece positions from the reference image (meaf.us/rps2)
+// Board coordinates: r=0 is top (row 9), c=0 is left (col A)
+// Blue: bottom-left diagonal | Red: top-right diagonal (mirror)
+
+function getInitialPieces() {
+    // Blue (Player 1) - bottom-left staircase
+    const p1 = [
+        { r: 4, c: 1, t: PAPER },    // B5
+        { r: 4, c: 2, t: SCISSORS }, // C5
+        { r: 5, c: 1, t: ROCK },     // B4
+        { r: 5, c: 2, t: PAPER },    // C4
+        { r: 5, c: 3, t: SCISSORS }, // D4
+        { r: 6, c: 2, t: ROCK },     // C3
+        { r: 6, c: 3, t: PAPER },    // D3
+        { r: 6, c: 4, t: SCISSORS }, // E3
+        { r: 7, c: 3, t: ROCK },     // D2
+        { r: 7, c: 4, t: PAPER },    // E2
+    ];
+
+    // Red (Player 2) - top-right staircase (180° mirror of Blue)
+    const p2 = [
+        { r: 4, c: 6, t: SCISSORS }, // G5
+        { r: 4, c: 7, t: PAPER },    // H5
+        { r: 3, c: 5, t: SCISSORS }, // F6
+        { r: 3, c: 6, t: PAPER },    // G6
+        { r: 3, c: 7, t: ROCK },     // H6
+        { r: 2, c: 4, t: SCISSORS }, // E7
+        { r: 2, c: 5, t: PAPER },    // F7
+        { r: 2, c: 6, t: ROCK },     // G7
+        { r: 1, c: 4, t: PAPER },    // E8
+        { r: 1, c: 5, t: ROCK },     // F8
+    ];
+
+    return { p1, p2 };
+}
+
+function initBoard() {
+    board = Array(ROWS).fill(null).map(() => Array(COLS).fill(null));
+    const { p1, p2 } = getInitialPieces();
+    p1.forEach(p => board[p.r][p.c] = { player: 1, type: p.t });
+    p2.forEach(p => board[p.r][p.c] = { player: 2, type: p.t });
+}
+
+// ===== Capture Rules (RPS) =====
+function canCapture(attackerType, defenderType) {
+    if (attackerType === defenderType) return false; // Same type = block
+    if (attackerType === ROCK && defenderType === SCISSORS) return true;
+    if (attackerType === SCISSORS && defenderType === PAPER) return true;
+    if (attackerType === PAPER && defenderType === ROCK) return true;
+    return false;
+}
+
+// ===== Move Validation =====
+function isValidMove(sr, sc, dr, dc) {
+    const rowDiff = Math.abs(dr - sr);
+    const colDiff = Math.abs(dc - sc);
+    // King-like movement: 1 step in any of 8 directions
+    if (rowDiff > 1 || colDiff > 1 || (rowDiff === 0 && colDiff === 0)) return false;
+
+    const myPiece = board[sr][sc];
+    const targetPiece = board[dr][dc];
+
+    if (!targetPiece) return true; // Empty cell = valid
+    if (targetPiece.player === myPiece.player) return false; // Own piece = blocked
+    return canCapture(myPiece.type, targetPiece.type); // Enemy = check RPS
+}
+
+// ===== Coordinate Helpers =====
+function toNotation(r, c) {
+    const col = String.fromCharCode(65 + c); // A-I
+    const row = 9 - r; // 1-9
+    return col + row;
+}
+
+// ===== Drawing =====
+function drawBoard() {
+    const boardDiv = document.getElementById('board');
+    boardDiv.innerHTML = '';
+
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            const cell = document.createElement('div');
+            cell.classList.add('cell');
+            cell.dataset.r = r;
+            cell.dataset.c = c;
+
+            // Goal squares
+            if (r === 8 && c === 0) cell.classList.add('goal-blue');  // A1
+            if (r === 0 && c === 8) cell.classList.add('goal-red');   // I9
+
+            // Selected highlight
+            if (selectedPiece && selectedPiece.r === r && selectedPiece.c === c) {
+                cell.classList.add('selected');
+            }
+
+            // Last move highlight
+            if (lastMove) {
+                if (lastMove.fromR === r && lastMove.fromC === c) cell.classList.add('last-move-from');
+                if (lastMove.toR === r && lastMove.toC === c) cell.classList.add('last-move-to');
+            }
+
+            // Valid move / capturable indicators
+            if (selectedPiece) {
+                if (isValidMove(selectedPiece.r, selectedPiece.c, r, c)) {
+                    const target = board[r][c];
+                    if (target && target.player !== board[selectedPiece.r][selectedPiece.c].player) {
+                        cell.classList.add('capturable');
+                    } else if (!target) {
+                        cell.classList.add('valid-move');
+                    }
+                }
+            }
+
+            // Click handler
+            cell.onclick = () => handleCellClick(r, c);
+
+            // Piece
+            const piece = board[r][c];
+            if (piece) {
+                const pieceDiv = document.createElement('div');
+                pieceDiv.classList.add('piece', piece.player === 1 ? 'piece-blue' : 'piece-red', piece.type);
+
+                const iconDiv = document.createElement('div');
+                iconDiv.classList.add('piece-icon');
+                iconDiv.innerHTML = PIECE_SVG[piece.type];
+                pieceDiv.appendChild(iconDiv);
+
+                cell.appendChild(pieceDiv);
+            }
+
+            // Move dot (for valid-move cells without pieces)
+            if (!piece || (selectedPiece && isValidMove(selectedPiece.r, selectedPiece.c, r, c) && !board[r][c])) {
+                const dot = document.createElement('div');
+                dot.classList.add('move-dot');
+                cell.appendChild(dot);
+            }
+
+            boardDiv.appendChild(cell);
+        }
+    }
+}
+
+// ===== Click Handler =====
+function handleCellClick(r, c) {
+    if (gameOver) return;
+
+    const clickedPiece = board[r][c];
+
+    // If no piece selected, select current player's piece
+    if (!selectedPiece) {
+        if (clickedPiece && clickedPiece.player === currentPlayer) {
+            selectedPiece = { r, c };
+            drawBoard();
+        }
+        return;
+    }
+
+    const sr = selectedPiece.r;
+    const sc = selectedPiece.c;
+
+    // Click same piece = deselect
+    if (sr === r && sc === c) {
+        selectedPiece = null;
+        drawBoard();
+        return;
+    }
+
+    // Click another own piece = reselect
+    if (clickedPiece && clickedPiece.player === currentPlayer) {
+        selectedPiece = { r, c };
+        drawBoard();
+        return;
+    }
+
+    // Attempt move
+    if (isValidMove(sr, sc, r, c)) {
+        executeMove(sr, sc, r, c);
+    } else {
+        selectedPiece = null;
+        drawBoard();
+    }
+}
+
+// ===== Execute Move =====
+function executeMove(sr, sc, dr, dc) {
+    const movingPiece = board[sr][sc];
+    const capturedPiece = board[dr][dc];
+    const isCapture = capturedPiece !== null;
+
+    // Record move
+    const moveRecord = {
+        player: currentPlayer,
+        pieceType: movingPiece.type,
+        from: toNotation(sr, sc),
+        to: toNotation(dr, dc),
+        capture: isCapture ? capturedPiece.type : null
+    };
+    moveHistory.push(moveRecord);
+
+    // Track captures
+    if (isCapture) {
+        if (currentPlayer === 1) {
+            capturedByBlue.push(capturedPiece.type);
+        } else {
+            capturedByRed.push(capturedPiece.type);
+        }
+    }
+
+    // Move piece
+    board[dr][dc] = board[sr][sc];
+    board[sr][sc] = null;
+
+    // Record last move
+    lastMove = { fromR: sr, fromC: sc, toR: dr, toC: dc };
+    selectedPiece = null;
+
+    // Update UI
+    drawBoard();
+    updateCapturedPanels();
+    addMoveToHistory(moveRecord);
+
+    // Check win
+    if (checkWin()) {
+        gameOver = true;
+        return;
+    }
+
+    // Switch turn
+    currentPlayer = currentPlayer === 1 ? 2 : 1;
+    updateTurnIndicator();
+
+    // Sync state via playhtml
+    syncState();
+}
+
+// ===== Win Condition =====
+function checkWin() {
+    // Win by reaching opponent's goal
+    // Blue (player 1) wins by reaching I9 (r=0, c=8)
+    const pieceAtI9 = board[0][8];
+    if (pieceAtI9 && pieceAtI9.player === 1) {
+        showWin(1, 'Đội Xanh đã chiếm ô I9!');
+        return true;
+    }
+    // Red (player 2) wins by reaching A1 (r=8, c=0)
+    const pieceAtA1 = board[8][0];
+    if (pieceAtA1 && pieceAtA1.player === 2) {
+        showWin(2, 'Đội Đỏ đã chiếm ô A1!');
+        return true;
+    }
+
+    // Win by eliminating all of one type
+    let p1Counts = { [ROCK]: 0, [PAPER]: 0, [SCISSORS]: 0 };
+    let p2Counts = { [ROCK]: 0, [PAPER]: 0, [SCISSORS]: 0 };
+
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            const p = board[r][c];
+            if (p) {
+                if (p.player === 1) p1Counts[p.type]++;
+                else p2Counts[p.type]++;
+            }
+        }
+    }
+
+    // Check if Blue lost all of one type
+    if (p1Counts[ROCK] === 0 || p1Counts[PAPER] === 0 || p1Counts[SCISSORS] === 0) {
+        const eliminated = Object.entries(p1Counts).find(([_, count]) => count === 0);
+        showWin(2, `Đội Đỏ đã tiêu diệt hết ${TYPE_NAMES[eliminated[0]]} của Đội Xanh!`);
+        return true;
+    }
+    // Check if Red lost all of one type
+    if (p2Counts[ROCK] === 0 || p2Counts[PAPER] === 0 || p2Counts[SCISSORS] === 0) {
+        const eliminated = Object.entries(p2Counts).find(([_, count]) => count === 0);
+        showWin(1, `Đội Xanh đã tiêu diệt hết ${TYPE_NAMES[eliminated[0]]} của Đội Đỏ!`);
+        return true;
+    }
+
+    return false;
+}
+
+function showWin(player, reason) {
+    const overlay = document.getElementById('win-overlay');
+    const title = document.getElementById('win-title');
+    const reasonEl = document.getElementById('win-reason');
+
+    if (player === 1) {
+        title.innerHTML = '🏆 Đội Xanh thắng!';
+        title.style.color = 'var(--theme-blue)';
+    } else {
+        title.innerHTML = '🏆 Đội Đỏ thắng!';
+        title.style.color = 'var(--theme-red)';
+    }
+    reasonEl.textContent = reason;
+    overlay.style.display = 'flex';
+}
+
+// ===== UI Updates =====
+function updateTurnIndicator() {
+    const text = document.getElementById('turn-text');
+    const dot = document.getElementById('turn-dot');
+
+    if (currentPlayer === 1) {
+        text.textContent = 'Lượt: Đội Xanh';
+        dot.classList.remove('red');
+    } else {
+        text.textContent = 'Lượt: Đội Đỏ';
+        dot.classList.add('red');
+    }
+}
+
+function updateCapturedPanels() {
+    const bluePanel = document.getElementById('captured-by-blue');
+    const redPanel = document.getElementById('captured-by-red');
+
+    bluePanel.innerHTML = capturedByBlue.length === 0
+        ? ''
+        : capturedByBlue.map(t => `<span class="captured-piece" style="color: var(--theme-red);">${TYPE_EMOJI[t]}</span>`).join('');
+
+    redPanel.innerHTML = capturedByRed.length === 0
+        ? ''
+        : capturedByRed.map(t => `<span class="captured-piece" style="color: var(--theme-blue);">${TYPE_EMOJI[t]}</span>`).join('');
+}
+
+function addMoveToHistory(move) {
+    const grid = document.getElementById('history-grid');
+    const countEl = document.getElementById('move-count');
+
+    // Remove empty message
+    const empty = grid.querySelector('.live-panel-empty');
+    if (empty) empty.remove();
+
+    const moveNum = moveHistory.length;
+    const card = document.createElement('div');
+    card.classList.add('history-move-card', move.player === 1 ? 'blue-move' : 'red-move');
+
+    const playerColor = move.player === 1 ? 'var(--theme-blue)' : 'var(--theme-red)';
+    const captureText = move.capture
+        ? ` ×${TYPE_EMOJI[move.capture]}`
+        : '';
+
+    card.innerHTML = `
+        <span class="history-move-number">${moveNum}.</span>
+        <div class="history-move-text">
+            <span class="history-piece-icon" style="color: ${playerColor}">
+                ${PIECE_SVG[move.pieceType]}
+            </span>
+            <span>${move.from} → ${move.to}${captureText}</span>
+        </div>
+    `;
+
+    grid.appendChild(card);
+    countEl.textContent = `${moveNum} nước`;
+
+    // Scroll to bottom
+    grid.scrollTop = grid.scrollHeight;
+}
+
+// ===== PlayHTML Sync =====
+function syncState() {
+    const syncEl = document.getElementById('game-sync');
+    if (syncEl) {
+        const state = {
+            board: board,
+            currentPlayer: currentPlayer,
+            lastMove: lastMove,
+            moveHistory: moveHistory,
+            capturedByBlue: capturedByBlue,
+            capturedByRed: capturedByRed,
+            gameOver: gameOver,
+            timestamp: Date.now()
+        };
+        syncEl.textContent = JSON.stringify(state);
+    }
+}
+
+function loadStateFromSync() {
+    const syncEl = document.getElementById('game-sync');
+    if (!syncEl || !syncEl.textContent) return false;
+
+    try {
+        const state = JSON.parse(syncEl.textContent);
+        if (!state.board) return false;
+
+        board = state.board;
+        currentPlayer = state.currentPlayer;
+        lastMove = state.lastMove;
+        moveHistory = state.moveHistory || [];
+        capturedByBlue = state.capturedByBlue || [];
+        capturedByRed = state.capturedByRed || [];
+        gameOver = state.gameOver || false;
+
+        drawBoard();
+        updateTurnIndicator();
+        updateCapturedPanels();
+        rebuildHistory();
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function rebuildHistory() {
+    const grid = document.getElementById('history-grid');
+    const countEl = document.getElementById('move-count');
+    grid.innerHTML = '';
+
+    if (moveHistory.length === 0) {
+        grid.innerHTML = '<div class="live-panel-empty">Chưa có nước đi nào</div>';
+        countEl.textContent = '0 nước';
+        return;
+    }
+
+    moveHistory.forEach((move, i) => {
+        const card = document.createElement('div');
+        card.classList.add('history-move-card', move.player === 1 ? 'blue-move' : 'red-move');
+        const playerColor = move.player === 1 ? 'var(--theme-blue)' : 'var(--theme-red)';
+        const captureText = move.capture ? ` ×${TYPE_EMOJI[move.capture]}` : '';
+        card.innerHTML = `
+            <span class="history-move-number">${i + 1}.</span>
+            <div class="history-move-text">
+                <span class="history-piece-icon" style="color: ${playerColor}">
+                    ${PIECE_SVG[move.pieceType]}
+                </span>
+                <span>${move.from} → ${move.to}${captureText}</span>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+    countEl.textContent = `${moveHistory.length} nước`;
+    grid.scrollTop = grid.scrollHeight;
+}
+
+// ===== Reset =====
+function resetGame() {
+    // Hide win modal
+    document.getElementById('win-overlay').style.display = 'none';
+
+    // Reset state
+    initBoard();
+    currentPlayer = 1;
+    selectedPiece = null;
+    lastMove = null;
+    moveHistory = [];
+    capturedByBlue = [];
+    capturedByRed = [];
+    gameOver = false;
+
+    // Update UI
+    drawBoard();
+    updateTurnIndicator();
+    updateCapturedPanels();
+    rebuildHistory();
+
+    // Sync
+    syncState();
+}
+
+// ===== Observe PlayHTML sync changes =====
+function setupSyncObserver() {
+    const syncEl = document.getElementById('game-sync');
+    if (!syncEl) return;
+
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.type === 'characterData' || mutation.type === 'childList') {
+                loadStateFromSync();
+            }
+        }
+    });
+
+    observer.observe(syncEl, {
+        characterData: true,
+        childList: true,
+        subtree: true
+    });
+}
+
+// ===== Initialize =====
+function init() {
+    initBoard();
+
+    // Try to load from sync first
+    if (!loadStateFromSync()) {
+        drawBoard();
+        updateTurnIndicator();
+    }
+
+    setupSyncObserver();
+}
+
+// Start
+init();
