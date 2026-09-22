@@ -299,6 +299,7 @@ function executeMove(sr, sc, dr, dc) {
     // Check win
     if (checkWin()) {
         gameOver = true;
+        syncState(); // Sync the final winning move to other players
         return;
     }
 
@@ -490,6 +491,11 @@ function pollSyncState() {
             updateTurnIndicator();
             updateCapturedPanels();
             rebuildHistory();
+            
+            // Show win screen if opponent made the winning move
+            if (gameOver) {
+                checkWin();
+            }
         } catch (e) {
             console.error("Failed to parse sync state", e);
         }
