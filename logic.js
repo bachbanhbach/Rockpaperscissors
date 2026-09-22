@@ -397,10 +397,12 @@ function addMoveToHistory(move) {
 }
 
 // ===== PlayHTML Sync =====
+let lastSyncedState = "";
+
 function syncState() {
     const syncEl = document.getElementById('game-sync');
     if (syncEl) {
-        const state = {
+        const stateStr = JSON.stringify({
             board: board,
             currentPlayer: currentPlayer,
             lastMove: lastMove,
@@ -409,40 +411,54 @@ function syncState() {
             capturedByRed: capturedByRed,
             gameOver: gameOver,
             timestamp: Date.now()
-        };
-        syncEl.textContent = JSON.stringify(state);
+        });
+        
+        if (lastSyncedState !== stateStr) {
+            lastSyncedState = stateStr;
+            syncEl.value = stateStr;
+            // Dispatch input event so playhtml detects the change
+            syncEl.dispatchEvent(new Event('input', { bubbles: true }));
+            syncEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
     }
 }
 
-function loadStateFromSync() {
+function pollSyncState() {
     const syncEl = document.getElementById('game-sync');
-    if (!syncEl || !syncEl.textContent) return false;
+    if (!syncEl) return;
+    
+    const currentValue = syncEl.value;
+    if (currentValue && currentValue !== lastSyncedState) {
+        try {
+            const state = JSON.parse(currentValue);
+            if (!state.board) return;
+            
+            // Only update if it's actually a newer state or if we don't have one
+            // We can check timestamp just to be safe, but exact string match is enough
+            lastSyncedState = currentValue;
+            
+            board = state.board;
+            currentPlayer = state.currentPlayer;
+            lastMove = state.lastMove;
+            moveHistory = state.moveHistory || [];
+            capturedByBlue = state.capturedByBlue || [];
+            capturedByRed = state.capturedByRed || [];
+            gameOver = state.gameOver || false;
 
-    try {
-        const state = JSON.parse(syncEl.textContent);
-        if (!state.board) return false;
-
-        board = state.board;
-        currentPlayer = state.currentPlayer;
-        lastMove = state.lastMove;
-        moveHistory = state.moveHistory || [];
-        capturedByBlue = state.capturedByBlue || [];
-        capturedByRed = state.capturedByRed || [];
-        gameOver = state.gameOver || false;
-
-        drawBoard();
-        updateTurnIndicator();
-        updateCapturedPanels();
-        rebuildHistory();
-        return true;
-    } catch (e) {
-        return false;
+            drawBoard();
+            updateTurnIndicator();
+            updateCapturedPanels();
+            rebuildHistory();
+        } catch (e) {
+            console.error("Failed to parse sync state", e);
+        }
     }
 }
 
 function rebuildHistory() {
     const grid = document.getElementById('history-grid');
     const countEl = document.getElementById('move-count');
+    if (!grid) return;
     grid.innerHTML = '';
 
     if (moveHistory.length === 0) {
@@ -474,7 +490,8 @@ function rebuildHistory() {
 // ===== Reset =====
 function resetGame() {
     // Hide win modal
-    document.getElementById('win-overlay').style.display = 'none';
+    const winOverlay = document.getElementById('win-overlay');
+    if (winOverlay) winOverlay.style.display = 'none';
 
     // Reset state
     initBoard();
@@ -496,35 +513,18 @@ function resetGame() {
     syncState();
 }
 
-// ===== Observe PlayHTML sync changes =====
 function setupSyncObserver() {
-    const syncEl = document.getElementById('game-sync');
-    if (!syncEl) return;
-
-    const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            if (mutation.type === 'characterData' || mutation.type === 'childList') {
-                loadStateFromSync();
-            }
-        }
-    });
-
-    observer.observe(syncEl, {
-        characterData: true,
-        childList: true,
-        subtree: true
-    });
+    // PlayHTML updates textarea value, which might not trigger standard DOM events we can listen to
+    // depending on how it's implemented internally. 
+    // Polling is a robust fallback for game state sync.
+    setInterval(pollSyncState, 300);
 }
 
 // ===== Initialize =====
 function init() {
     initBoard();
-
-    // Try to load from sync first
-    if (!loadStateFromSync()) {
-        drawBoard();
-        updateTurnIndicator();
-    }
+    drawBoard();
+    updateTurnIndicator();
 
     setupSyncObserver();
 }
