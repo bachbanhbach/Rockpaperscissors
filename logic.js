@@ -36,6 +36,32 @@ let moveHistory = [];
 let capturedByBlue = []; // pieces Blue captured from Red
 let capturedByRed = [];  // pieces Red captured from Blue
 let gameOver = false;
+let players = { blue: null, red: null };
+
+// Local Player State
+let localPlayerId = localStorage.getItem('ottv2_player_id');
+if (!localPlayerId) {
+    localPlayerId = Math.random().toString(36).substring(2, 12);
+    localStorage.setItem('ottv2_player_id', localPlayerId);
+}
+let myRole = 0; // 0 = Viewer, 1 = Blue, 2 = Red
+
+function updateRoleUI() {
+    const blueName = document.getElementById('blue-name');
+    const redName = document.getElementById('red-name');
+    if (!blueName || !redName) return;
+    
+    if (myRole === 1) {
+        blueName.textContent = 'Đội Xanh (Bạn)';
+        redName.textContent = 'Đội Đỏ';
+    } else if (myRole === 2) {
+        blueName.textContent = 'Đội Xanh';
+        redName.textContent = 'Đội Đỏ (Bạn)';
+    } else {
+        blueName.textContent = 'Đội Xanh';
+        redName.textContent = 'Đội Đỏ';
+    }
+}
 
 // ===== Board Initialization =====
 // Piece positions from the reference image (meaf.us/rps2)
@@ -183,6 +209,17 @@ function drawBoard() {
 // ===== Click Handler =====
 function handleCellClick(r, c) {
     if (gameOver) return;
+
+    // Turn & Role Enforcement
+    if (myRole !== 1 && myRole !== 2) {
+        // You are a spectator, you cannot play
+        alert("Bạn đang là người xem (Phòng đã đủ 2 người chơi).");
+        return;
+    }
+    if (myRole !== currentPlayer) {
+        // Not your turn
+        return;
+    }
 
     const clickedPiece = board[r][c];
 
@@ -403,6 +440,7 @@ function syncState() {
     const syncEl = document.getElementById('game-sync');
     if (syncEl) {
         const stateStr = JSON.stringify({
+            players: players,
             board: board,
             currentPlayer: currentPlayer,
             lastMove: lastMove,
@@ -437,6 +475,7 @@ function pollSyncState() {
             // We can check timestamp just to be safe, but exact string match is enough
             lastSyncedState = currentValue;
             
+            players = state.players || { blue: null, red: null };
             board = state.board;
             currentPlayer = state.currentPlayer;
             lastMove = state.lastMove;
@@ -445,6 +484,8 @@ function pollSyncState() {
             capturedByRed = state.capturedByRed || [];
             gameOver = state.gameOver || false;
 
+            checkAndClaimRole();
+
             drawBoard();
             updateTurnIndicator();
             updateCapturedPanels();
@@ -452,6 +493,34 @@ function pollSyncState() {
         } catch (e) {
             console.error("Failed to parse sync state", e);
         }
+    }
+}
+
+function checkAndClaimRole() {
+    let needsSync = false;
+    
+    if (players.blue === localPlayerId) {
+        myRole = 1;
+    } else if (players.red === localPlayerId) {
+        myRole = 2;
+    } else {
+        // Try to claim an empty seat
+        if (!players.blue) {
+            players.blue = localPlayerId;
+            myRole = 1;
+            needsSync = true;
+        } else if (!players.red) {
+            players.red = localPlayerId;
+            myRole = 2;
+            needsSync = true;
+        } else {
+            myRole = 0; // Spectator
+        }
+    }
+    
+    updateRoleUI();
+    if (needsSync) {
+        syncState();
     }
 }
 
@@ -525,6 +594,13 @@ function init() {
     initBoard();
     drawBoard();
     updateTurnIndicator();
+
+    // Try to claim role in a new room if playhtml doesn't sync any existing state
+    setTimeout(() => {
+        if (!lastSyncedState) {
+            checkAndClaimRole();
+        }
+    }, 1500);
 
     setupSyncObserver();
 }
