@@ -368,12 +368,21 @@ body {
 }
 
 .piece-blue.rock .piece-icon svg,
+.piece-red.rock .piece-icon svg,
+.piece-blue.paper .piece-icon svg,
+.piece-red.paper .piece-icon svg,
+.piece-blue.scissors .piece-icon svg,
+.piece-red.scissors .piece-icon svg {
+    fill: none;
+    stroke: currentColor;
+}
+.piece-blue.rock .piece-icon svg,
 .piece-red.rock .piece-icon svg {
     fill: currentColor;
     stroke: none;
 }
-.piece-blue.rock { color: var(--theme-blue); }
-.piece-red.rock { color: var(--theme-red); }
+.piece-blue { color: var(--theme-blue); }
+.piece-red { color: var(--theme-red); }
 
 /* ===== Move Animation ===== */
 .moving-piece-overlay {
